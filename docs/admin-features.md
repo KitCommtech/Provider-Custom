@@ -1,0 +1,50 @@
+# Provider Admin functional update
+
+The English Admin entry point is `mng-list-all.php`. Existing Admin login and dalo operator ACLs are retained. The existing main/home/management entry points now lead to the focused workspace.
+
+## Navigation and features
+
+- **Dashboard**: total users, reported online users, open sessions, sessions needing verification, suspended accounts, accounts expiring within 7 days. Cards open the related Users filter.
+- **Users**: paginated username/name/IP search and group/status filters. Create local users, edit local profiles, change local passwords, assign groups, set expiry/concurrency/session/idle limits, suspend/enable, delete accounts without open accounting records. Deletion retains accounting history.
+- **User detail drawer**: Profile, Account & Access, Active Sessions, History. Search, filters and page remain in place when opening or saving a drawer.
+- **Provider Profile**: allowlisted name, provider ID, email, organization and department fields. Provider profile/credentials are read-only. `Last Synced` is shown only when the existing `updateby=OAuthCallback` and a valid `updatedate` establish the timestamp; older ambiguous records show “Not recorded”. Raw provider JSON, passwords and tokens are never returned to the Admin browser.
+- **CSV Import**: UTF-8 header `username,password,firstname,lastname,email,group`. Up to 500 rows / 1 MB. Existing usernames, invalid fields and unknown groups fail validation before any writes. The import uses one database transaction.
+- **User Groups**: membership is managed in Account & Access. Groups expose the `Fortinet-Group-Name` RADIUS reply mapping, preserving other group attributes. FortiGate group matches and shaping policies must still be configured on the FortiGate. Multiple group mappings use additive reply operators.
+- **Active Sessions**: per-device IP, MAC, NAS, start, last update and reported duration. Open records with no update in 10 minutes are explicitly marked “Needs verification”. The threshold is a UI heuristic; it is not proof of a live/offline device and should be reviewed against the configured interim update interval.
+- **Disconnect**: confirmation for one or all sessions, server-side session ownership and ACL checks, NAS lookup and bounded radclient requests. Username, Acct-Session-Id, NAS-IP-Address and available IP/MAC are sent in Disconnect-Request packets. ACK, NAK, timeout and errors are reported separately. ACK does not set Accounting-Stop or fabricate an offline state. All-session requests run in batches of at most ten. Audit intent is persisted before sending a packet.
+- **Activity & Logs**: latest 100 accounting records filtered by user/IP/date, password-free authentication results from radpostauth, and recent admin actions. User detail history retains the account's connection and admin history.
+- **Settings**: links to existing NAS/FortiGate, operator ACL and backup tools. Secrets are omitted from the new NAS summary. Those legacy tools retain their existing behavior.
+
+Batch account generation/card printing, billing, GIS and Portal appearance controls are hidden from the focused navigation. Legacy handlers remain available to existing ACLs; hiding a menu is not an authorization boundary.
+
+## Database migration
+
+Apply `daloradius/app/operators/library/provider/schema.sql` before deployment. It adds only `pc_admin_audit` and `pc_user_access`; it does not alter existing user records or environment files. Runtime code deliberately does not create tables automatically. `pc_user_access` preserves prior Auth-Type rows while an account is suspended through the new UI.
+
+## Local validation setup
+
+The local `radius-web` container mounts `source/daloradius` through the parent project's `compose.admin-dev.yml`. Its existing private `daloradius.conf.php` is mounted read-only from the original export. Existing database volumes and the original Portal container are retained. The Admin runs at http://localhost:8001; Portal remains http://localhost:8080.
+
+No `.env` or `.env.example` keys or values were edited. All four existing environment files matched their SHA-256 baseline after validation.
+
+## Validation — 26 October 2026
+
+- PHP syntax checks on the actual PHP 7.4 container, and JavaScript syntax check.
+- **46 integration assertions**: empty-state dashboard, local CRUD/password handling, expiry and access attributes, suspension/restore, provider read-only fields and redaction, groups and membership, CSV atomic validation, accounting search, multiple and stale sessions, authentication results without passwords, ACL enforcement, audit records and safe deletion.
+- Disconnect tests exercised the actual `radclient` UDP path against a loopback NAS simulator producing authenticated Disconnect-ACK, Disconnect-NAK and timeout responses. No real NAS was contacted by those tests.
+- **9 HTTP checks**: login required, CSRF enforcement, POST-only mutations, profile response redaction, SQL injection treated as search text, direct-include protection, and read-only loading of all three Settings tools.
+- Browser checks: Admin login, navigation, User/IP search, Provider Profile, access form, multiple sessions, Disconnect confirmation/cancel, group creation, user creation/edit, Suspend/Enable, CSV upload, accounting/audit history, Settings and logout. Screenshots were captured with fictional QA profile/session data.
+- QA tables and browser fixtures are removed after testing. Existing private user records are not used as test targets.
+
+Not validated here: real FortiGate group matching/shaping, disconnect/Accounting-Stop on an actual FortiGate, upstream ProviderID OAuth, backup creation/restore, or operator permission edits in the legacy tools. Their existing pages load, but those state-changing legacy workflows were not exercised in this UI change.
+
+## Running the automated checks
+
+Run only in an isolated/local environment with the migration applied. `tests/provider-admin.php` creates empty `pcqa_*` copies of the configured tables and removes them in `finally`; it refuses to overwrite pre-existing test tables. Copy it and `tests/provider-mock-nas.php` into the PHP container's `/tmp` and run the former with PHP.
+
+`tests/provider-ui-fixture.php` creates fictional Local UI fixtures and a temporary QA operator; `php /tmp/provider-ui-fixture.php clean` removes them. `tests/provider-admin-http.py` expects those fixtures and localhost port 8001. These fixed credentials are test-only, never deployment credentials.
+
+## FortiGate reference
+
+Fortinet documents group matching against the Fortinet-Group-Name RADIUS attribute:
+https://docs.fortinet.com/document/fortigate/7.6.0/administration-guide/710485/restricting-radius-user-groups-to-match-selective-users-on-the-radius-server

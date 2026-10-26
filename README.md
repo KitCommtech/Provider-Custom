@@ -31,3 +31,7 @@ Real `.env` files, live daloRADIUS configuration, server database backups, runti
 Prepared from the local server export on 26 October 2026. The original development directory and server backup were left untouched. daloRADIUS and bundled third-party components retain their respective licenses; this repository does not relicense them. Exported portal package metadata declares MIT, but original frontend sources are not included.
 
 Validation for this snapshot: Compose configuration syntax and publication-file checks. The existing original stack was previously verified to respond on HTTP 8001/8080; a fresh deployment from this sanitized snapshot has not been tested.
+
+## Focused Admin UI (dev)
+
+See [Admin features, migration and validation](docs/admin-features.md). The new Admin requires the additive schema migration and preserves the private environment configuration.

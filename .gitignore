@@ -27,3 +27,5 @@ server-backup/
 # Local HTTP authentication stores
 **/.htpasswd
 **/.htdigest
+
+!daloradius/app/operators/library/provider/schema.sql
