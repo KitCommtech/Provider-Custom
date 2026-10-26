@@ -86,3 +86,11 @@ Validation: **75 integration assertions passed** in isolated `pcqa_*` tables wit
 The login page now uses a centered responsive card, the SKNHOS logo, Admin Management heading, separated fields, blue Sign In button and an inline invalid-login alert. The visible daloRADIUS version label is removed. Form target, POST field names, CSRF token, location selection and authentication logic are retained; username/current-password autocomplete attributes are supplied. Login-page HTTP assertions identify the form instead of depending on the previous heading text.
 
 Validated at 1440×1000 and 375×812: centered card, no horizontal overflow on mobile, required fields, rejected invalid credentials and readable inline error. PHP syntax and environment hashes verified. Successful authentication was validated in the preceding full functional run; it was not repeated for this presentation update.
+
+## Local Captive Portal login correction
+
+On 26 October 2026, the imported `DOCKER NET` NAS subnet was corrected from `172.19.0.0/16` to the live Docker subnet `172.21.0.0/16` (Portal source `172.21.0.4`). The existing NAS ID and all other fields, including its shared secret, were retained. The existing secret was privately verified to match the Portal. FreeRADIUS configuration validation passed; only the local RADIUS container was restarted to load SQL clients.
+
+Seven HTTP assertions passed: unauthenticated profile denied, wrong password rejected, correct password accepted, cookie creation, authenticated profile, logout, and session denial after logout. Browser login, profile, persistence after reload, logout and protected-page redirection also passed. Temporary QA data was cleaned and all environment-file hashes remained unchanged. Real FortiGate disconnection and external ProviderID OAuth were not exercised.
+
+When importing a server database or recreating Docker networking, inspect the actual local subnet and compare it with NAS Devices. Update only the Docker NAS address if needed, retain its existing shared secret, and reload RADIUS clients. Keep the FortiGate NAS entry and production environment credentials intact.
