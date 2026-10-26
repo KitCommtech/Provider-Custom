@@ -22,7 +22,7 @@ class ProviderAdmin {
     }
     private function requirePermission($file) { if (!$this->allowed($file)) { throw new PCError('You do not have permission for this action.',403); } }
     public function permissions() {
-        $out=[]; foreach(['mng_new','mng_edit','mng_del','mng_import_users','mng_rad_profiles_new','mng_rad_profiles_edit','mng_rad_profiles_del','config_maint_disconnect_user','acct_all','config_operators_list','config_backup_managebackups','mng_rad_nas_list'] as $f) { $out[$f]=$this->allowed($f); } return $out;
+        $out=[]; foreach(['mng_new','mng_edit','mng_del','mng_import_users','mng_rad_profiles_new','mng_rad_profiles_edit','mng_rad_profiles_del','config_maint_disconnect_user','acct_all','config_operators_list','config_backup_managebackups','mng_rad_nas_list','mng_rad_nas_new','mng_rad_nas_edit'] as $f) { $out[$f]=$this->allowed($f); } return $out;
     }
     private function text($in,$key,$max=128,$required=false) {
         $v=$in[$key]??''; if (!is_string($v) || strlen($v)>$max || preg_match('/[\x00-\x1f\x7f]/',$v)) { throw new PCError('Invalid '.$key.'.'); }
@@ -118,6 +118,9 @@ class ProviderAdmin {
     }
     public function dashboard() {
         $r=$this->q('SELECT COUNT(*) users,SUM(suspended) suspended,SUM(sessions>0 AND stale_sessions<sessions) online_users,SUM(sessions) sessions,SUM(stale_sessions) stale_sessions,SUM(STR_TO_DATE(expiration,\'%d %b %Y %H:%i:%s\') BETWEEN NOW() AND DATE_ADD(NOW(),INTERVAL 7 DAY)) expiring FROM ('.$this->baseUsers().') d')->fetch();
+        $r['groups']=count($this->groups());
+        $r['accounting_records']=$this->allowed('acct_all')?(int)$this->q('SELECT COUNT(*) FROM '.$this->tables['acct'])->fetchColumn():null;
+        $r['nas_devices']=$this->allowed('mng_rad_nas_list')?(int)$this->q('SELECT COUNT(*) FROM '.$this->tables['nas'])->fetchColumn():null;
         $r['updated_at']=gmdate('c');return $r;
     }
     private function setAttribute($table,$u,$attr,$value) {
@@ -201,7 +204,39 @@ class ProviderAdmin {
         $this->requirePermission('acct_all');$u=$this->text($in,'username',128);
         return $this->q('SELECT created_at,operator_name,action,username,session_id,status,detail FROM pc_admin_audit'.($u!==''?' WHERE username=?':'').' ORDER BY id DESC LIMIT 100',$u!==''?[$u]:[])->fetchAll();
     }
-    public function nasList() { $this->requirePermission('mng_rad_nas_list');return $this->q('SELECT id,nasname,shortname,type,ports,description FROM '.$this->tables['nas'].' ORDER BY shortname')->fetchAll(); }
+    public function nasList() { $this->requirePermission('mng_rad_nas_list');return $this->q('SELECT id,nasname,shortname,type,ports,description,CASE WHEN secret IS NULL OR secret=\'\' THEN 0 ELSE 1 END secret_set FROM '.$this->tables['nas'].' ORDER BY shortname')->fetchAll(); }
+    public function saveNas($in) {
+        $id=$in['id']??0;
+        if(!is_scalar($id)||!ctype_digit((string)$id))throw new PCError('Invalid NAS identifier.');
+        $id=(int)$id;$this->requirePermission($id?'mng_rad_nas_edit':'mng_rad_nas_new');
+        $address=$this->text($in,'address',128,true);$parts=explode('/',$address);
+        if(count($parts)>2||!filter_var($parts[0],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)||(isset($parts[1])&&(!ctype_digit($parts[1])||(int)$parts[1]>32)))throw new PCError('Enter a valid IPv4 address or IPv4 subnet (CIDR).');
+        if(isset($parts[1])){
+            $bits=(int)$parts[1];$mask=$bits===0?0:(0xffffffff << (32-$bits));
+            $address=long2ip(ip2long($parts[0])&$mask).'/'.$bits;
+        }
+        $name=$this->text($in,'name',32,true);$type=$this->text($in,'type',30,true);
+        if(!in_array($type,['other','fortinet','mikrotik','cisco'],true))throw new PCError('Choose a supported NAS type.');
+        $description=$this->text($in,'description',200);$port=$in['disconnect_port']??'';
+        if(!is_scalar($port)||!ctype_digit((string)$port)||(int)$port<1||(int)$port>65535)throw new PCError('Disconnect port must be between 1 and 65535.');
+        $secret=$in['secret']??'';
+        if(!is_string($secret)||strlen($secret)>60||preg_match('/[\x00-\x20\x7f]/',$secret)||(!$id&&strlen($secret)<8)||($secret!==''&&strlen($secret)<8))throw new PCError('Shared secret must contain 8–60 characters without whitespace. Leave it blank when editing to keep the current secret.');
+        return $this->transaction(function()use($id,$address,$name,$type,$description,$port,$secret){
+            $old=null;
+            if($id){$old=$this->q('SELECT nasname,CASE WHEN secret IS NULL OR secret=\'\' THEN 0 ELSE 1 END secret_set FROM '.$this->tables['nas'].' WHERE id=? FOR UPDATE',[$id])->fetch();if(!$old)throw new PCError('NAS not found.',404);}
+            if($old&&!$old['secret_set']&&$secret==='')throw new PCError('This NAS has no shared secret. Enter one before saving.');
+            if($this->q('SELECT id FROM '.$this->tables['nas'].' WHERE nasname=? AND id<>?',[$address,$id])->fetchColumn())throw new PCError('This NAS address is already registered.',409);
+            if($id&&$old['nasname']!==$address&&$this->q('SELECT COUNT(*) FROM '.$this->tables['acct'].' WHERE nasipaddress=? AND acctstoptime IS NULL',[$old['nasname']])->fetchColumn())throw new PCError('This NAS has open sessions. Disconnect or resolve them before changing its address.',409);
+            if($id){
+                $this->q('UPDATE '.$this->tables['nas'].' SET nasname=?,shortname=?,type=?,ports=?,description=? WHERE id=?',[$address,$name,$type,(int)$port,$description,$id]);
+                if($secret!=='')$this->q('UPDATE '.$this->tables['nas'].' SET secret=? WHERE id=?',[$secret,$id]);
+            }else{
+                $this->q('INSERT INTO '.$this->tables['nas'].' (nasname,shortname,type,ports,secret,description) VALUES (?,?,?,?,?,?)',[$address,$name,$type,(int)$port,$secret,$description]);$id=(int)$this->db->lastInsertId();
+            }
+            $this->audit($old?'nas.update':'nas.create','','success','NAS #'.$id.' '.$address.' saved'.($old&&$secret!==''?'; shared secret explicitly replaced.':'.'));
+            return ['id'=>$id,'message'=>'NAS saved. Apply the RADIUS client configuration on the RADIUS server before testing FortiGate connectivity.'];
+        });
+    }
     public function importCsv($in) {
         $this->requirePermission('mng_import_users');$this->requirePermission('mng_new');
         if(empty($_FILES['csv'])||$_FILES['csv']['error']!==UPLOAD_ERR_OK||$_FILES['csv']['size']>1048576)throw new PCError('Upload a CSV file up to 1 MB.');

@@ -10,7 +10,7 @@ try {
     if(isset($_GET['api'])){
         header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');
         $action=$_GET['api'];$in=$_GET;
-        $writes=['save_user','create_user','suspend','delete_user','save_group','delete_group','import','disconnect','bulk_preview','bulk_users'];
+        $writes=['save_user','create_user','suspend','delete_user','save_group','delete_group','import','disconnect','bulk_preview','bulk_users','save_nas'];
         if(in_array($action,$writes,true)){
             if($_SERVER['REQUEST_METHOD']!=='POST')throw new PCError('Use POST for this action.',405);
             if(!hash_equals($_SESSION['pc_csrf'],$_SERVER['HTTP_X_CSRF_TOKEN']??''))throw new PCError('Session verification failed. Reload and try again.',403);
@@ -26,6 +26,7 @@ try {
             case 'audit':$result=$pc->auditRows($in);break;
             case 'auth_events':$result=$pc->authenticationEvents($in);break;
             case 'nas':$result=$pc->nasList();break;
+            case 'save_nas':$result=$pc->saveNas($in);break;
             case 'create_user':$result=$pc->saveUser($in,true);break;
             case 'save_user':$result=$pc->saveUser($in,false);break;
             case 'suspend':$result=$pc->suspend($in);break;

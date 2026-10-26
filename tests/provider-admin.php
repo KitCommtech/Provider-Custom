@@ -10,7 +10,7 @@ function check($ok,$label){global $checks;if(!$ok)throw new Exception('FAIL: '.$
 function rejects($fn,$code,$label){try{$fn();}catch(PCError $e){check($e->http===$code,$label);return;}throw new Exception('FAIL: expected error '.$label);}
 try {
  foreach(['RADCHECK','RADREPLY','RADUSERGROUP','RADGROUPREPLY','RADGROUPCHECK','DALOUSERINFO','RADACCT','RADPOSTAUTH','RADNAS','DALOOPERATORS_ACL'] as $suffix){$key='CONFIG_DB_TBL_'.$suffix;$original=$configValues[$key];$table='pcqa_'.strtolower($suffix);if($db->query("SHOW TABLES LIKE '$table'")->fetch())throw new Exception('QA table already exists; refusing to overwrite.');$db->exec("CREATE TABLE `$table` LIKE `$original`");$created[]=$table;$configValues[$key]=$table;}
- $permissions=['mng_list_all','mng_new','mng_edit','mng_del','mng_import_users','mng_rad_profiles_new','mng_rad_profiles_edit','mng_rad_profiles_del','config_maint_disconnect_user','acct_all','mng_rad_nas_list'];
+ $permissions=['mng_list_all','mng_new','mng_edit','mng_del','mng_import_users','mng_rad_profiles_new','mng_rad_profiles_edit','mng_rad_profiles_del','config_maint_disconnect_user','acct_all','mng_rad_nas_list','mng_rad_nas_new','mng_rad_nas_edit'];
  $s=$db->prepare('INSERT INTO pcqa_dalooperators_acl (operator_id,file,access) VALUES (?,?,1)');foreach($permissions as $permission)$s->execute([$_SESSION['operator_id'],$permission]);
  $pc=new ProviderAdmin($db,$configValues,'pc-qa-test');
  check($pc->dashboard()['users']==0,'empty dashboard');
@@ -50,6 +50,25 @@ try {
  $db->exec("INSERT INTO pcqa_radnas (nasname,shortname,type,secret,ports) VALUES ('127.0.0.1','QA','other','QA-Test-Secret',37991)");
  check(count($pc->nasList())===1,'NAS list excludes secrets');
  check(strpos(json_encode($pc->nasList()),'QA-Test-Secret')===false,'NAS secret not returned');
+ // NAS forms use the isolated NAS table; no live RADIUS shared secrets are changed.
+ $nasInput=['address'=>'192.0.2.10','name'=>'QA FortiGate','type'=>'other','disconnect_port'=>'3799','secret'=>'NAS-QA-TestOnly','description'=>'Synthetic device'];
+ $newNas=$pc->saveNas($nasInput);$nasInput['id']=$newNas['id'];
+ $entry=array_values(array_filter($pc->nasList(),function($n)use($newNas){return (int)$n['id']===$newNas['id'];}))[0];
+ check($entry['shortname']==='QA FortiGate'&&(int)$entry['secret_set']===1,'create NAS with secret configured flag');
+ check(strpos(json_encode($pc->nasList()),'NAS-QA-TestOnly')===false,'NAS secrets never returned to UI');
+ $nasInput['secret']='';$nasInput['name']='QA Updated';$pc->saveNas($nasInput);
+ check($db->query('SELECT secret FROM pcqa_radnas WHERE id='.(int)$newNas['id'])->fetchColumn()==='NAS-QA-TestOnly','blank NAS secret preserves saved value');
+ $nasInput['secret']='NAS-QA-Replacement';$pc->saveNas($nasInput);
+ check($db->query('SELECT secret FROM pcqa_radnas WHERE id='.(int)$newNas['id'])->fetchColumn()==='NAS-QA-Replacement','explicit NAS secret replacement');
+ check(strpos(json_encode($pc->auditRows([])),'NAS-QA-Replacement')===false,'NAS audit omits secret');
+ $duplicate=$nasInput;unset($duplicate['id']);rejects(function()use($pc,$duplicate){$pc->saveNas($duplicate);},409,'duplicate NAS address rejected');
+ $invalid=$nasInput;$invalid['address']='invalid-address';rejects(function()use($pc,$invalid){$pc->saveNas($invalid);},400,'invalid NAS address rejected');
+ $invalid=$nasInput;$invalid['disconnect_port']='0';rejects(function()use($pc,$invalid){$pc->saveNas($invalid);},400,'invalid NAS port rejected');
+ $invalid=$nasInput;$invalid['secret']='short';rejects(function()use($pc,$invalid){$pc->saveNas($invalid);},400,'invalid NAS secret rejected');
+ $db->exec("UPDATE pcqa_radacct SET nasipaddress='192.0.2.10' WHERE radacctid=".$session);$changed=$nasInput;$changed['address']='192.0.2.11';rejects(function()use($pc,$changed){$pc->saveNas($changed);},409,'NAS address change blocked for open sessions');$db->exec("UPDATE pcqa_radacct SET nasipaddress='127.0.0.1' WHERE radacctid=".$session);
+ $cidr=$nasInput;unset($cidr['id']);$cidr['address']='198.51.100.27/24';$cidr['name']='QA Subnet';$cidrRecord=$pc->saveNas($cidr);check($db->query('SELECT nasname FROM pcqa_radnas WHERE id='.(int)$cidrRecord['id'])->fetchColumn()==='198.51.100.0/24','CIDR normalized before duplicate checks');
+ $db->exec("UPDATE pcqa_dalooperators_acl SET access=0 WHERE file='mng_rad_nas_edit'");rejects(function()use($pc,$nasInput){$pc->saveNas($nasInput);},403,'NAS edit permission enforced');$db->exec("UPDATE pcqa_dalooperators_acl SET access=1 WHERE file='mng_rad_nas_edit'");
+ $db->exec("UPDATE pcqa_dalooperators_acl SET access=0 WHERE file='mng_rad_nas_new'");$newInput=$nasInput;unset($newInput['id']);rejects(function()use($pc,$newInput){$pc->saveNas($newInput);},403,'NAS create permission enforced');$db->exec("UPDATE pcqa_dalooperators_acl SET access=1 WHERE file='mng_rad_nas_new'");
  // Mock NAS child replies with a valid response authenticator. Exercise real radclient UDP packets.
  foreach(['acknowledged'=>41,'rejected'=>42,'timeout'=>0] as $expected=>$code){
    $mock=__DIR__.'/provider-mock-nas.php';$process=proc_open(['php',$mock,(string)$code],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);

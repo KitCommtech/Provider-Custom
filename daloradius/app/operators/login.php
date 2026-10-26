@@ -104,7 +104,7 @@ body {
 <body>
     <main class="form-login w-100 m-auto">
     <form action="dologin.php" method="POST">
-    <img class="mb-4" src="static/images/daloradius_small.png" alt="daloRADIUS" width="135" height="41">
+    <img class="mb-4" src="static/images/logo-sknhos.png" alt="SKNHOS" width="120" height="90" style="object-fit:contain">
     <h1 class="h3 mb-3 fw-normal"><?= t('text','LoginRequired') ?></h1>
 
     <div class="form-floating">
