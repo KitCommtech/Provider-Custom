@@ -45,7 +45,7 @@ $dir = (strtolower($langCode) === 'ar') ? "rtl" : "ltr";
 <html lang="<?= $langCode ?>" dir="<?= $dir ?>">
 
 <head>
-    <title>daloRADIUS :: Login</title>
+    <title>Sign In · Admin Management</title>
     <meta charset="utf-8">
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -59,61 +59,31 @@ $dir = (strtolower($langCode) === 'ar') ? "rtl" : "ltr";
 
     <link rel="stylesheet" href="static/css/bootstrap.min.css">
     
-    <style>
-html, body {
-  height: 100%;
-}
-
-body {
-  display: flex;
-  align-items: center;
-  padding-top: 40px;
-  padding-bottom: 40px;
-  background-color: #f5f5f5;
-}
-
-.form-login {
-  max-width: 480px;
-  padding: 15px;
-}
-
-.form-login .form-floating:focus-within {
-  z-index: 2;
-}
-
-.form-login input[type="text"] {
-  margin-bottom: -1px;
-  border-bottom-right-radius: 0;
-  border-bottom-left-radius: 0;
-}
-
-.form-login input[type="password"] {
-  margin-bottom: -1px;  
-  border-radius: 0;
-}
-
-.form-login select {
-  margin-bottom: 10px;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-
-    </style>
+    <link rel="stylesheet" href="static/css/provider-login.css">
 </head>
 
 <body>
-    <main class="form-login w-100 m-auto">
-    <form action="dologin.php" method="POST">
-    <img class="mb-4" src="static/images/logo-sknhos.png" alt="SKNHOS" width="120" height="90" style="object-fit:contain">
-    <h1 class="h3 mb-3 fw-normal"><?= t('text','LoginRequired') ?></h1>
+    <main class="login-card" aria-labelledby="login-title">
+    <header class="login-header">
+        <img class="login-logo" src="static/images/logo-sknhos.png" alt="SKNHOS" width="144" height="108">
+        <h1 id="login-title">Admin Management</h1>
+        <p>Sign in to your workspace</p>
+    </header>
+<?php
+    if (!empty($_SESSION['operator_login_error'])) {
+        echo '<div class="login-error" role="alert">Unable to sign in. Check your username and password and try again.</div>';
+        unset($_SESSION['operator_login_error']);
+    }
+?>
+    <form action="dologin.php" method="POST" class="login-form">
 
     <div class="form-floating">
-    <input type="text" class="form-control" id="operator_user" name="operator_user" placeholder="<?= t('all','Username') ?>" required>
+    <input type="text" class="form-control" id="operator_user" name="operator_user" placeholder="<?= t('all','Username') ?>" autocomplete="username" required>
     <label for="operator_user"><?= t('all','Username') ?></label>
     </div>
     
     <div class="form-floating">
-    <input type="password" class="form-control" id="operator_pass" name="operator_pass" placeholder="<?= t('all','Password') ?>" required>
+    <input type="password" class="form-control" id="operator_pass" name="operator_pass" placeholder="<?= t('all','Password') ?>" autocomplete="current-password" required>
     <label for="operator_pass"><?= t('all','Password') ?></label>
     </div>
 
@@ -135,41 +105,12 @@ body {
         <label for="location">Location</label>
     </div>
                     
-    <button class="w-100 btn btn-lg btn-primary" type="submit"><?= t('text','LoginPlease') ?></button>
-    <small class="my-2 text-muted text-center d-block"><?= t('all','daloRADIUS') ?></small>
+    <button class="w-100 btn btn-primary login-submit" type="submit">Sign In</button>
     
     <input name="csrf_token" type="hidden" value="<?= dalo_csrf_token() ?>">
     </form>
     
 
-<?php
-    if (isset($_SESSION['operator_login_error']) && $_SESSION['operator_login_error'] !== false) {
-        $message = t('messages','loginerror');
-        echo <<<EOF
-        
-    <div class="toast-container position-fixed bottom-0 end-0 p-3">
-        <div id="error-toast" class="toast align-items-start text-bg-danger border-0" role="alert" aria-live="assertive" aria-atomic="true">
-            <div class="d-flex">
-                <div class="toast-body">{$message}</div>
-                <button type="button" class="btn-close m-2" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-
-window.onload = function() {
-    var errorToast = document.getElementById('error-toast');
-    var toast = new bootstrap.Toast(errorToast); toast.show();
-}
-
-    </script>
-
-EOF;
-        unset($_SESSION['operator_login_error']);
-    }
-?>
-  
     </main>
 
     <script src="static/js/bootstrap.bundle.min.js"></script>

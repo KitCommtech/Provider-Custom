@@ -8,7 +8,7 @@ def request(path,data=None,headers={}):
   return r.status,r.read().decode()
  except urllib.error.HTTPError as e:return e.code,e.read().decode()
 status,html=request('mng-list-all.php?api=dashboard')
-assert 'Login Required' in html;checks.append('unauthenticated API redirects to login')
+assert 'action="dologin.php"' in html;checks.append('unauthenticated API redirects to login')
 _,html=request('login.php');csrf=re.search(r'name="csrf_token"[^>]+value="([^"]+)"',html).group(1)
 import urllib.parse
 _,html=request('dologin.php',urllib.parse.urlencode({'operator_user':'pc-ui-qa','operator_pass':'LocalUiQA-2026!','csrf_token':csrf,'location':'default'}).encode())
@@ -23,6 +23,6 @@ for file in ['library/provider/core.php','library/provider/controller.php','libr
 checks.append('internal PHP includes reject direct access')
 for page in ['mng-rad-nas-list.php','config-operators-list.php','config-backup-managebackups.php']:
  status,text=request(page)
- assert status==200 and 'Fatal error' not in text and 'Login Required' not in text, page
+ assert status==200 and 'Fatal error' not in text and 'action="dologin.php"' not in text, page
  checks.append('settings page loads: '+page)
 print(json.dumps({'passed':len(checks),'checks':checks},indent=2))

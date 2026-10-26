@@ -80,3 +80,9 @@ NAS Devices now uses the shared console layout with Add NAS and Edit NAS drawers
 Saves require the appropriate NAS create/edit ACL, authenticated POST and CSRF validation. Duplicate addresses, invalid IPs/ports and invalid new secrets are rejected. Changing an individual NAS IP with open accounting sessions is blocked. Changes are database-only: the RADIUS server must load the client configuration and FortiGate must use the matching source IP/shared secret. Actual FortiGate connectivity remains an environment validation step.
 
 Validation: **75 integration assertions passed** in isolated `pcqa_*` tables with cleanup in `finally`, including NAS create/edit, unchanged/replaced secrets, response/audit redaction, input validation, duplicate addresses, subnet normalization, open-session guard and permissions. Browser validation opens the existing NAS list and add/edit forms without submitting changes to real devices. PHP and JavaScript syntax checks and environment baseline verification are recorded with the local validation artifacts.
+
+## Centered Admin login
+
+The login page now uses a centered responsive card, the SKNHOS logo, Admin Management heading, separated fields, blue Sign In button and an inline invalid-login alert. The visible daloRADIUS version label is removed. Form target, POST field names, CSRF token, location selection and authentication logic are retained; username/current-password autocomplete attributes are supplied. Login-page HTTP assertions identify the form instead of depending on the previous heading text.
+
+Validated at 1440×1000 and 375×812: centered card, no horizontal overflow on mobile, required fields, rejected invalid credentials and readable inline error. PHP syntax and environment hashes verified. Successful authentication was validated in the preceding full functional run; it was not repeated for this presentation update.
