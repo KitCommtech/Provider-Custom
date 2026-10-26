@@ -213,6 +213,55 @@ class ProviderAdmin {
         // Validate the entire file before any write. Revalidate/create in one transaction.
         return $this->transaction(function()use($rows){foreach($rows as $v){$u=$v['username'];$this->q('INSERT INTO '.$this->tables['users'].' (username,firstname,lastname,email,creationdate,creationby) VALUES (?,?,?,?,NOW(),?)',[$u,$v['firstname'],$v['lastname'],$v['email'],$this->operator]);$this->setAttribute('check',$u,'Cleartext-Password',$v['password']);foreach($v['groups'] as $i=>$g)$this->q('INSERT INTO '.$this->tables['groups'].' (username,groupname,priority) VALUES (?,?,?)',[$u,$g,$i+1]);$this->audit('user.import',$u,'success','Imported from CSV; credentials omitted.');}return ['message'=>count($rows).' users imported.'];});
     }
+    private function selectedUsers($in) {
+        $users=$in['usernames']??null;
+        if(!is_array($users)||count($users)<1||count($users)>100)throw new PCError('Select between 1 and 100 users.');
+        // Validate every target before starting any mutation; never expand a search into a delete.
+        $valid=[];foreach($users as $u)$valid[]=$this->username($u);
+        return array_values(array_unique($valid));
+    }
+    public function bulkPreview($in) {
+        $rows=[];foreach($this->selectedUsers($in) as $u){
+            if(!$this->exists($u)){$rows[]=['username'=>$u,'exists'=>false,'groups'=>[],'sessions'=>[]];continue;}
+            $groups=$this->q('SELECT DISTINCT groupname FROM '.$this->tables['groups'].' WHERE username=? ORDER BY priority',[$u])->fetchAll(PDO::FETCH_COLUMN);
+            $rows[]=['username'=>$u,'exists'=>true,'groups'=>$groups,'sessions'=>$this->sessions($u)];
+        }
+        return ['users'=>$rows,'updated_at'=>gmdate('c')];
+    }
+    public function bulkUsers($in) {
+        $operation=$in['operation']??'';
+        if(!in_array($operation,['groups','delete'],true))throw new PCError('Unknown bulk action.');
+        $this->requirePermission($operation==='groups'?'mng_edit':'mng_del');
+        $users=$this->selectedUsers($in);$groups=[];$mode='';
+        if($operation==='groups'){
+            $mode=$in['mode']??'';if(!in_array($mode,['add','remove','replace'],true))throw new PCError('Choose Add, Remove or Replace groups.');
+            $groups=$in['groups']??null;
+            if(!is_array($groups)||count($groups)>20||(!$groups&&$mode!=='replace'))throw new PCError('Select one or more groups (maximum 20).');
+            $available=array_column($this->groups(),'groupname');
+            foreach($groups as $g)if(!is_string($g)||!in_array($g,$available,true))throw new PCError('Select existing groups.');
+            $groups=array_values(array_unique($groups));
+        }
+        $results=[];
+        foreach($users as $u){
+            try {
+                if(!$this->exists($u))throw new PCError('User no longer exists.',404);
+                if($operation==='delete')$result=$this->deleteUser(['username'=>$u]);
+                else $result=$this->transaction(function()use($u,$groups,$mode){
+                    $current=$this->q('SELECT groupname FROM '.$this->tables['groups'].' WHERE username=? ORDER BY priority FOR UPDATE',[$u])->fetchAll(PDO::FETCH_COLUMN);
+                    $current=array_values(array_unique($current));
+                    $next=$mode==='replace'?$groups:($mode==='add'?array_values(array_unique(array_merge($current,$groups))):array_values(array_diff($current,$groups)));
+                    if(count($next)>20)throw new PCError('This change would exceed 20 groups for this user.');
+                    $this->q('DELETE FROM '.$this->tables['groups'].' WHERE username=?',[$u]);
+                    foreach($next as $i=>$g)$this->q('INSERT INTO '.$this->tables['groups'].' (username,groupname,priority) VALUES (?,?,?)',[$u,$g,$i+1]);
+                    $this->audit('user.groups.'.$mode,$u,'success','Bulk membership update: '.json_encode(['before'=>$current,'after'=>$next]));
+                    return ['message'=>'Groups updated. Existing sessions are unchanged.'];
+                });
+                $results[]=['username'=>$u,'status'=>'success','message'=>$result['message']];
+            }catch(PCError $e){$results[]=['username'=>$u,'status'=>'skipped','message'=>$e->getMessage()];}
+            catch(Throwable $e){error_log('Provider Admin bulk action: '.$e->getMessage());$results[]=['username'=>$u,'status'=>'error','message'=>'This user could not be processed. Check the Admin server log.'];}
+        }
+        return ['results'=>$results];
+    }
     private function nasFor($ip) {
         if(!filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4))throw new PCError('Session has no valid IPv4 NAS address.');
         $rows=$this->q('SELECT nasname,ports,secret FROM '.$this->tables['nas'].' ORDER BY id')->fetchAll();$candidates=[];

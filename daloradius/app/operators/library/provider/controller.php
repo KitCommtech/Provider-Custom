@@ -10,7 +10,7 @@ try {
     if(isset($_GET['api'])){
         header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');
         $action=$_GET['api'];$in=$_GET;
-        $writes=['save_user','create_user','suspend','delete_user','save_group','delete_group','import','disconnect'];
+        $writes=['save_user','create_user','suspend','delete_user','save_group','delete_group','import','disconnect','bulk_preview','bulk_users'];
         if(in_array($action,$writes,true)){
             if($_SERVER['REQUEST_METHOD']!=='POST')throw new PCError('Use POST for this action.',405);
             if(!hash_equals($_SESSION['pc_csrf'],$_SERVER['HTTP_X_CSRF_TOKEN']??''))throw new PCError('Session verification failed. Reload and try again.',403);
@@ -34,6 +34,8 @@ try {
             case 'delete_group':$result=$pc->deleteGroup($in);break;
             case 'disconnect':$result=$pc->disconnect($in);break;
             case 'import':$result=$pc->importCsv($in);break;
+            case 'bulk_preview':$result=$pc->bulkPreview($in);break;
+            case 'bulk_users':$result=$pc->bulkUsers($in);break;
             default:throw new PCError('Unknown action.',404);
         }
         echo json_encode(['ok'=>true,'data'=>$result],JSON_INVALID_UTF8_SUBSTITUTE);exit;

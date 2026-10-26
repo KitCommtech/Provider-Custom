@@ -48,3 +48,17 @@ Run only in an isolated/local environment with the migration applied. `tests/pro
 
 Fortinet documents group matching against the Fortinet-Group-Name RADIUS attribute:
 https://docs.fortinet.com/document/fortigate/7.6.0/administration-guide/710485/restricting-radius-user-groups-to-match-selective-users-on-the-radius-server
+
+## Multi-user actions
+
+Users now has per-row checkboxes, Select All on This Page, a selection count, Clear Selection and permission-aware Change Groups / Disconnect Sessions / Delete Users actions. Up to 100 explicit usernames may be selected across pages. Search/filter changes clear the selection; no action implicitly selects every matching account.
+
+Every action opens a fresh preview listing exact usernames, existing groups and open session counts, followed by an explicit confirmation. Membership modes are Add (preserves existing groups), Remove (preserves others), and Replace (overwrites all memberships, including explicitly clearing all). Provider profiles, credentials and access limits are untouched by membership changes. Each user is processed independently with audit records and per-user success/skip/error results.
+
+Bulk deletion uses the same guard as individual deletion: accounts with any open accounting records, including stale ones, are skipped. Missing accounts are reported separately; accounting history is retained.
+
+Bulk Disconnect snapshots session IDs at preview time and sends them through the existing ACL/CSRF-protected per-session endpoint in chunks of ten. Later-created sessions are not silently included. ACK/NAK/timeout outcomes remain explicit and Accounting-Stop is never fabricated. Offline users are skipped, and the Review Disconnect button is disabled if the entire preview has no open sessions.
+
+User Groups has View Members (opens the group-filtered Users list) and Assign Users (opens Users with that target group preselected in Change Groups). No membership writes happen merely by opening either view.
+
+Validation update: **62 integration assertions passed**, including multi-user preview, deduplication, limits, invalid targets/groups, add/remove/replace, provider-field preservation, guarded partial deletion and ACL enforcement. Browser checks exercised checkboxes, select-page, preview, confirmation/cancel, target-group handoff and selection reset, without writing to existing accounts. A separate attempt to add UI test fixtures to the working local database was rejected by automatic review because the command lacked integrated cleanup; it was not executed. Automated mutations were tested only in empty prefixed QA tables that the test removes in finally.

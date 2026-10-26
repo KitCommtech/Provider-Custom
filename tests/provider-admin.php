@@ -61,8 +61,31 @@ try {
  // CSV parser and all-or-nothing import.
  $file=tempnam(sys_get_temp_dir(),'pcqa-csv');file_put_contents($file,"username,password,firstname,lastname,email,group\nqa-csv,TestOnly-2026,CSV,Person,csv@example.invalid,QA Staff\n");$_FILES=['csv'=>['error'=>UPLOAD_ERR_OK,'size'=>filesize($file),'tmp_name'=>$file]];$pc->importCsv([]);check($pc->detail('qa-csv')['groups']===['QA Staff'],'CSV import');
  file_put_contents($file,"username,password,firstname,lastname,email,group\nqa-valid,TestOnly-2026,Valid,Person,valid@example.invalid,QA Staff\nqa-invalid,short,Invalid,Person,invalid@example.invalid,QA Staff\n");$_FILES['csv']['size']=filesize($file);rejects(function()use($pc){$pc->importCsv([]);},400,'CSV invalid row rejected');check($pc->users(['q'=>'qa-valid'])['total']===0,'CSV validation leaves no partial account');unlink($file);
+ // Multi-user management. Targets are explicit and validated before mutation.
+ $pc->saveGroup(['groupname'=>'QA Guest','fortigate_group'=>'FGT-Guest']);
+ $preview=$pc->bulkPreview(['usernames'=>['qa-person','qa-csv','qa-missing','qa-person']]);check(count($preview['users'])===3&&!$preview['users'][2]['exists'],'bulk preview deduplicates explicit users and flags missing accounts');
+ check(strpos(json_encode($preview),'DO-NOT-EXPOSE')===false&&strpos(json_encode($preview),'TestOnly-2026')===false,'bulk preview excludes credentials');
+ $bulk=['operation'=>'groups','mode'=>'add','groups'=>['QA Guest'],'usernames'=>['qa-person','qa-csv']];
+ $r=$pc->bulkUsers($bulk);check(count($r['results'])===2&&$r['results'][0]['status']==='success','bulk add groups');
+ check($pc->detail('qa-person')['groups']===['QA Staff','QA Guest'],'bulk add preserves previous groups');
+ check($pc->detail('qa-person')['profile']['firstname']==='Changed','bulk groups preserves Provider profile');
+ $bulk['mode']='remove';$r=$pc->bulkUsers($bulk);check($pc->detail('qa-csv')['groups']===['QA Staff'],'bulk remove preserves other groups');
+ $bulk['mode']='replace';$pc->bulkUsers($bulk);check($pc->detail('qa-person')['groups']===['QA Guest'],'bulk replace memberships');
+ $bulk['groups']=[];$pc->bulkUsers($bulk);check(!$pc->detail('qa-person')['groups'],'explicit empty replace clears memberships');
+ $bulk['mode']='add';$bulk['groups']=['QA Staff'];$pc->bulkUsers($bulk);
+ $bulk['groups']=['Nonexistent'];rejects(function()use($pc,$bulk){$pc->bulkUsers($bulk);},400,'invalid bulk group rejected before writes');
+ rejects(function()use($pc){$pc->bulkUsers(['operation'=>'delete','usernames'=>['qa-person',"invalid'username"]]);},400,'invalid bulk target rejected before deletion');check($pc->detail('qa-person')['user']['username']==='qa-person','bulk validation prevents partial deletion');
+ rejects(function()use($pc){$pc->bulkPreview(['usernames'=>array_fill(0,101,'qa-person')]);},400,'bulk maximum enforced');
+ $tmp=['username'=>'qa-bulk-offline','password'=>'TestOnly-2026'];$pc->saveUser($tmp,true);$tmp['username']='qa-bulk-active';$pc->saveUser($tmp,true);
+ $insert->execute(['qa-bulk-session','qa-bulk-session','qa-bulk-active','127.0.0.1',$db->query('SELECT NOW()')->fetchColumn()]);
+ $r=$pc->bulkUsers(['operation'=>'delete','usernames'=>['qa-bulk-offline','qa-bulk-active','qa-bulk-missing']]);
+ check(array_column($r['results'],'status')===['success','skipped','skipped'],'bulk deletion reports success, active skip and missing skip separately');
+ check(count($pc->bulkPreview(['usernames'=>['qa-bulk-active']])['users'][0]['sessions'])===1,'bulk disconnect preview includes exact open session IDs');
+ $db->exec("UPDATE pcqa_radacct SET acctstoptime=NOW() WHERE username='qa-bulk-active'");$pc->bulkUsers(['operation'=>'delete','usernames'=>['qa-bulk-active']]);$pc->deleteGroup(['groupname'=>'QA Guest']);
  $db->exec("UPDATE pcqa_dalooperators_acl SET access=0 WHERE file='mng_edit'");rejects(function()use($pc,$v){$pc->saveUser($v,false);},403,'write permission enforced');
+ rejects(function()use($pc){$pc->bulkUsers(['operation'=>'groups','mode'=>'replace','groups'=>[],'usernames'=>['qa-person']]);},403,'bulk membership permission enforced');
  $db->exec("UPDATE pcqa_dalooperators_acl SET access=0 WHERE file='config_maint_disconnect_user'");rejects(function()use($pc,$session){$pc->disconnect(['username'=>'qa-person','session_ids'=>[$session]]);},403,'disconnect permission enforced');
+ $db->exec("UPDATE pcqa_dalooperators_acl SET access=0 WHERE file='mng_del'");rejects(function()use($pc){$pc->bulkUsers(['operation'=>'delete','usernames'=>['qa-person']]);},403,'bulk deletion permission enforced');$db->exec("UPDATE pcqa_dalooperators_acl SET access=1 WHERE file='mng_del'");
  $pc->deleteUser(['username'=>'qa-csv']);$pc->deleteUser(['username'=>'qa-person']);check(count($pc->history(['username'=>'qa-person']))===2,'delete retains accounting history');$pc->deleteGroup(['groupname'=>'QA Staff']);check(!$pc->groups(),'empty group deletion');
  check(count($pc->auditRows([]))>0,'admin actions audited');
  echo "ALL $checks CHECKS PASSED\n";
