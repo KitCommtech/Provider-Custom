@@ -201,11 +201,13 @@
     include('include/config/logging.php');
     
     $inline_extra_js = "
+if (typeof DHTMLgoodies_formTooltip !== 'undefined') {
 var tooltipObj = new DHTMLgoodies_formTooltip();
 tooltipObj.setTooltipPosition('right');
 tooltipObj.setPageBgColor('#EEEEEE');
 tooltipObj.setTooltipCornerSize(15);
-tooltipObj.initFormFieldTooltip()";
+tooltipObj.initFormFieldTooltip();
+}";
     
     print_footer_and_html_epilogue($inline_extra_js);
 ?>
