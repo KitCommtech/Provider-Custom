@@ -1,0 +1,17 @@
+{
+  "name": "auth-secure-gate",
+  "version": "1.0.10",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "cross-env": "^7.0.3",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "mysql2": "^3.14.1",
+    "pino": "^10.3.1",
+    "radius": "^1.1.4",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^3.24.2"
+  }
+}

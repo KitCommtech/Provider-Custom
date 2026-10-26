@@ -1,0 +1,138 @@
+{
+  "name": "provider-local",
+  "services": {
+    "radius-web": {
+      "image": "sha256:0c3460265b513c61083ac3f0b987f125f53298d1eb4c2a3e997feab6c2d2a863",
+      "platform": "linux/amd64",
+      "pull_policy": "never",
+      "networks": [
+        "local"
+      ],
+      "depends_on": {
+        "radius-mysql": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "MYSQL_DATABASE": "${MYSQL_DATABASE}",
+        "MYSQL_USER": "${MYSQL_USER}",
+        "MYSQL_PASSWORD": "${MYSQL_PASSWORD}",
+        "MYSQL_HOST": "radius-mysql",
+        "MYSQL_PORT": "3306",
+        "DEFAULT_CLIENT_SECRET": "${RADIUS_SECRET}",
+        "DEFAULT_FREERADIUS_SERVER": "radius"
+      },
+      "volumes": [
+        "./data/daloradius:/data",
+        "./daloradius:/var/www/daloradius"
+      ]
+    },
+    "web-portal": {
+      "image": "sha256:6491309f9deb45b9180e9149b8d741c7e949b955ff1f2222a6b715581dee33ac",
+      "platform": "linux/amd64",
+      "pull_policy": "never",
+      "networks": [
+        "local"
+      ],
+      "depends_on": {
+        "radius-mysql": {
+          "condition": "service_healthy"
+        }
+      },
+      "env_file": [
+        ".env"
+      ],
+      "volumes": [
+        "./web-portal:/app"
+      ]
+    },
+    "radius": {
+      "image": "sha256:66b52bb9069a20ef045fe6178b2b957a5dd8ab1e8650f7eb0a87bcb4916c7684",
+      "platform": "linux/amd64",
+      "pull_policy": "never",
+      "networks": [
+        "local"
+      ],
+      "depends_on": {
+        "radius-mysql": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "MYSQL_DATABASE": "${MYSQL_DATABASE}",
+        "MYSQL_USER": "${MYSQL_USER}",
+        "MYSQL_PASSWORD": "${MYSQL_PASSWORD}",
+        "MYSQL_HOST": "radius-mysql",
+        "MYSQL_PORT": "3306",
+        "DEFAULT_CLIENT_SECRET": "${RADIUS_SECRET}"
+      },
+      "volumes": [
+        "./data/freeradius:/data",
+        "./radius-app:/app"
+      ],
+      "command": [
+        "-X"
+      ]
+    },
+    "radius-mysql": {
+      "image": "sha256:1a3c5f4fdaa7fbd746f690e497525c5f1f755bf361f7fde5f44dd48af0d615a1",
+      "platform": "linux/amd64",
+      "pull_policy": "never",
+      "networks": [
+        "local"
+      ],
+      "environment": {
+        "MYSQL_DATABASE": "${MYSQL_DATABASE}",
+        "MYSQL_USER": "${MYSQL_USER}",
+        "MYSQL_PASSWORD": "${MYSQL_PASSWORD}",
+        "MYSQL_ROOT_PASSWORD": "${MYSQL_ROOT_PASSWORD}"
+      },
+      "volumes": [
+        "mysql-local:/var/lib/mysql",
+        "./private/database:/docker-entrypoint-initdb.d:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mariadb-admin ping -h 127.0.0.1 -uroot --silent"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 60
+      }
+    },
+    "local-proxy": {
+      "image": "sha256:6491309f9deb45b9180e9149b8d741c7e949b955ff1f2222a6b715581dee33ac",
+      "platform": "linux/amd64",
+      "pull_policy": "never",
+      "entrypoint": [
+        "node",
+        "-e"
+      ],
+      "command": [
+        "const net=require('net');for(const [port,host,target] of [[8000,'radius-web',8000],[8080,'web-portal',5000]])net.createServer(s=>{const u=net.connect(target,host);s.pipe(u);u.pipe(s);u.on('error',()=>s.destroy());s.on('error',()=>u.destroy());}).listen(port,'0.0.0.0');"
+      ],
+      "networks": [
+        "local",
+        "frontend"
+      ],
+      "ports": [
+        "127.0.0.1:8001:8000",
+        "127.0.0.1:8080:8080"
+      ],
+      "depends_on": [
+        "radius-web",
+        "web-portal"
+      ]
+    }
+  },
+  "volumes": {
+    "mysql-local": {}
+  },
+  "networks": {
+    "local": {
+      "internal": true
+    },
+    "frontend": {}
+  }
+}

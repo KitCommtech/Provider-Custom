@@ -1,0 +1,29 @@
+# Credentials and server-specific configuration
+.env
+.env.*
+!.env.example
+**/daloradius.conf.php
+*.key
+*.pem
+*.p12
+*.pfx
+# Runtime state and server exports
+private/
+server-backup/
+**/data/
+**/internal_data/
+*.sql
+!daloradius/contrib/db/*.sql
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.bak
+# Dependencies and editor state
+**/node_modules/
+**/.DS_Store
+.vscode/
+
+# Local HTTP authentication stores
+**/.htpasswd
+**/.htdigest

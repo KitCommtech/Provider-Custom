@@ -1,0 +1,91 @@
+version: "3"
+
+services:
+
+  radius-mysql:
+    image: mariadb:10
+    container_name: radius-mysql
+    # restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - 3306:3306
+    networks:
+      - radius-network
+
+  radius:
+    image: zokemoke/radius-server
+    container_name: radius
+    # restart: unless-stopped
+    depends_on: 
+      - radius-mysql
+    ports:
+      - '1812:1812/udp'
+      - '1813:1813/udp'
+    environment:
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - DEFAULT_CLIENT_SECRET=${RADIUS_SECRET}
+    volumes:
+      - ./data/freeradius:/data
+    # If you want to disable debug output, remove the command parameter
+    command: -X
+    networks:
+      - radius-network
+
+  radius-web:
+    image: zokemoke/radius-web:ubuntu
+    container_name: radius-web
+    # restart: unless-stopped
+    depends_on:
+      - radius
+      - radius-mysql
+    ports:
+      # - '80:80' # user
+      - '8000:8000' # administrator
+    environment:
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      # Optional Settings:
+      - DEFAULT_CLIENT_SECRET=${RADIUS_SECRET}
+      - DEFAULT_FREERADIUS_SERVER=${RADIUS_SERVER_HOST}
+      # - MAIL_SMTPADDR=127.0.0.1
+      # - MAIL_PORT=25
+      # - MAIL_FROM=root@daloradius.xdsl.by
+      # - MAIL_AUTH=
+    volumes:
+      - ./data/daloradius:/data
+    networks:
+      - radius-network
+
+  web-portal:
+    image: zokemoke/auth-secure-gate:1.0.10 # version 7 work!! popup error validation
+    container_name: web-portal
+    # restart: unless-stopped
+    depends_on:
+      - radius
+      - radius-mysql
+    ports:
+      - '80:5000'
+    env_file: 
+      - ./.env
+    networks:
+      - radius-network
+
+volumes:
+  mysql-data:
+
+networks:
+  radius-network:
+    driver: bridge
