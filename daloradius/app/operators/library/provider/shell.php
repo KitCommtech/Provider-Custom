@@ -7,7 +7,7 @@ if(!is_string($pcCurrentView))$pcCurrentView='dashboard';
 ?>
 <a class="skip-link" href="#content">Skip to content</a>
 <header class="app-header">
- <a class="brand" href="mng-list-all.php?view=dashboard" aria-label="SKNHOS Admin dashboard"><img class="brand-logo" src="static/images/logo-sknhos.png" alt="SKNHOS"><span>SKNHOS<small>NETWORK ACCESS</small></span></a>
+ <a class="brand" href="mng-list-all.php?view=dashboard" aria-label="Admin Management dashboard"><img class="brand-logo" src="static/images/logo-sknhos.png" alt="SKNHOS"><span>ADMIN<small>Management</small></span></a>
  <button class="mobile-menu icon-button" id="menuToggle" type="button" aria-label="Open navigation" aria-controls="appSidebar" aria-expanded="false"><i class="bi bi-list" aria-hidden="true"></i></button>
  <div class="header-context">Network access management</div>
  <div class="header-account"><span class="workspace-tag"><span></span> Admin Console</span><span class="avatar" aria-hidden="true"><?= $pcShellEscape(strtoupper(substr($_SESSION['operator_user'],0,1))) ?></span><span class="header-username"><?= $pcShellEscape($_SESSION['operator_user']) ?></span></div>
