@@ -50,8 +50,8 @@ var validate = (options) => {
 // shared/schema.ts
 import { z } from "zod";
 var loginUserSchema = z.object({
-  username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password must be at least 6 characters long")
+  username: z.string().min(1, "Username is required").max(128, "Username is too long").refine((value) => value.trim().length > 0 && Buffer.byteLength(value, "utf8") <= 253, "Invalid username"),
+  password: z.string().min(1, "Password is required").refine((value) => Buffer.byteLength(value, "utf8") <= 128, "Password is too long")
 });
 var UserSchema = z.object({
   username: z.string().max(128),
@@ -1214,7 +1214,7 @@ var mapProfileToUserInfo = (profileData, providerUsername) => {
 
 // server/routes.ts
 async function registerRoutes(app2) {
-  app2.post("/api/authenticate", async (req, res) => {
+  app2.post("/api/authenticate", validate({ body: loginUserSchema }), async (req, res) => {
     const { username, password } = req.body;
     logger.info({ action: "authenticate", data: { username } }, "[API] Received authentication request");
     try {
@@ -1528,10 +1528,11 @@ app.use((req, res, next) => {
   const server = await registerRoutes(app);
   startSessionSweeper();
   app.use((err, _req, res, _next) => {
+    if (res.headersSent) return _next(err);
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-    res.status(status).json({ message });
-    throw err;
+    const message = status >= 500 ? "Internal Server Error" : status === 400 ? "Invalid request body" : err.message || "Request failed";
+    logger.warn({ action: "http_error", status }, "HTTP request failed");
+    res.status(status).json({ success: false, message });
   });
   if (app.get("env") === "development") {
     const { setupVite } = await import("./vite");
