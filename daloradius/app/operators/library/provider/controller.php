@@ -10,7 +10,7 @@ try {
     if(isset($_GET['api'])){
         header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');
         $action=$_GET['api'];$in=$_GET;
-        $writes=['save_user','create_user','suspend','delete_user','save_group','delete_group','import','disconnect','bulk_preview','bulk_users','save_nas'];
+        $writes=['save_user','create_user','suspend','delete_user','save_group','delete_group','import','disconnect','bulk_preview','bulk_users','save_nas','preview_log_clear','clear_logs'];
         if(in_array($action,$writes,true)){
             if($_SERVER['REQUEST_METHOD']!=='POST')throw new PCError('Use POST for this action.',405);
             if(!hash_equals($_SESSION['pc_csrf'],$_SERVER['HTTP_X_CSRF_TOKEN']??''))throw new PCError('Session verification failed. Reload and try again.',403);
@@ -25,6 +25,17 @@ try {
             case 'history':$result=$pc->history($in);break;
             case 'audit':$result=$pc->auditRows($in);break;
             case 'auth_events':$result=$pc->authenticationEvents($in);break;
+            case 'log_entries':$result=$pc->logEntries($in);break;
+            case 'log_status':$result=$pc->logStatus();break;
+            case 'preview_log_clear':
+                $plan=$pc->logClearPlan($in);$nonce=bin2hex(random_bytes(32));
+                $_SESSION['pc_log_clear']=['plan'=>$plan,'nonce'=>$nonce,'expires'=>time()+300];
+                unset($plan['targets']);$result=$plan+['nonce'=>$nonce];break;
+            case 'clear_logs':
+                $preview=$_SESSION['pc_log_clear']??null;
+                if(!$preview||$preview['expires']<time()||!is_string($in['nonce']??null)||!hash_equals($preview['nonce'],$in['nonce']))throw new PCError('Cleanup preview expired. Review it again.',409);
+                if(($in['confirmation']??'')!=='CLEAR')throw new PCError('Type CLEAR to confirm log deletion.');
+                unset($_SESSION['pc_log_clear']);$result=$pc->clearLogPlan($preview['plan']);break;
             case 'nas':$result=$pc->nasList();break;
             case 'save_nas':$result=$pc->saveNas($in);break;
             case 'create_user':$result=$pc->saveUser($in,true);break;

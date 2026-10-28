@@ -16,10 +16,11 @@ try {
  check($pc->dashboard()['users']==0,'empty dashboard');
  $pc->saveGroup(['groupname'=>'QA Staff','fortigate_group'=>'FGT-Staff']);check($pc->groups()[0]['fortigate_group']==='FGT-Staff','group mapping');
  check($db->query("SELECT op FROM pcqa_radgroupreply WHERE groupname='QA Staff'")->fetchColumn()==='+=','multiple FortiGate group replies are additive');
- $v=['username'=>'qa-person','password'=>'TestOnly-2026','firstname'=>'QA','lastname'=>'Person','email'=>'qa@example.invalid','company'=>'TEST ONLY','groups'=>['QA Staff'],'simultaneous'=>'2','session_timeout'=>'3600','idle_timeout'=>'600','expires'=>'2030-01-01T12:00'];
+ $v=['username'=>'qa-person','password'=>'TestOnly-2026','firstname'=>'QA','lastname'=>'Person','email'=>'qa@example.invalid','company'=>'TEST ONLY','groups'=>['QA Staff'],'simultaneous'=>'2','session_timeout'=>'3600','expires'=>'2030-01-01T12:00'];
  $pc->saveUser($v,true);$d=$pc->detail('qa-person');
  check($d['user']['account_status']==='Enabled'&&$d['groups']===['QA Staff'],'create account and assign group');
  check($d['access']['Simultaneous-Use']==='2'&&$d['access']['Session-Timeout']==='3600','access limits stored in correct RADIUS tables');
+ check(!isset($d['access']['Idle-Timeout']) && (int)$db->query("SELECT COUNT(*) FROM pcqa_radreply WHERE attribute='Idle-Timeout'")->fetchColumn()===0,'account creation does not configure idle timeout');
  check(strpos(json_encode($d),'TestOnly-2026')===false,'no password in profile response');
  rejects(function()use($pc,$v){$pc->saveUser($v,true);},409,'duplicate username rejected');
  $v['password']='';$v['firstname']='Changed';$pc->saveUser($v,false);check($pc->detail('qa-person')['profile']['firstname']==='Changed','edit local profile');

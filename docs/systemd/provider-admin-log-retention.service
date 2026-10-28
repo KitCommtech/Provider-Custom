@@ -1,0 +1,9 @@
+[Unit]
+Description=Keep Provider Admin logs for seven days
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec radius-web php /var/www/daloradius/app/operators/library/provider/maintenance.php --run
+TimeoutStartSec=120

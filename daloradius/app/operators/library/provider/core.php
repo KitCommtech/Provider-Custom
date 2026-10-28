@@ -5,8 +5,9 @@ class PCError extends RuntimeException {
     public $http;
     public function __construct($message, $http = 400) { parent::__construct($message); $this->http = $http; }
 }
+require_once __DIR__.'/logs.php';
 class ProviderAdmin {
-    private $db; private $tables; private $operator;
+    private $db; private $tables; private $operator; private $logStore;
     public function __construct(PDO $db, array $config, $operator) {
         $this->db = $db; $this->operator = $operator;
         $map = ['check'=>'RADCHECK','reply'=>'RADREPLY','groups'=>'RADUSERGROUP','groupreply'=>'RADGROUPREPLY','groupcheck'=>'RADGROUPCHECK','users'=>'DALOUSERINFO','acct'=>'RADACCT','auth'=>'RADPOSTAUTH','nas'=>'RADNAS','acl'=>'DALOOPERATORS_ACL'];
@@ -15,6 +16,7 @@ class ProviderAdmin {
             if (!preg_match('/^[a-zA-Z0-9_]+$/D', $name)) { throw new PCError('Invalid database table configuration.',500); }
             $this->tables[$key] = '`'.$name.'`';
         }
+        $this->logStore=new ProviderLogStore($db,['accounting'=>trim($this->tables['acct'],'`'),'authentication'=>trim($this->tables['auth'],'`'),'admin'=>$config['PC_LOG_AUDIT_TABLE']??'pc_admin_audit'],$operator);
     }
     private function q($sql, $params=[]) { $s=$this->db->prepare($sql); $s->execute($params); return $s; }
     public function allowed($file) {
@@ -22,7 +24,7 @@ class ProviderAdmin {
     }
     private function requirePermission($file) { if (!$this->allowed($file)) { throw new PCError('You do not have permission for this action.',403); } }
     public function permissions() {
-        $out=[]; foreach(['mng_new','mng_edit','mng_del','mng_import_users','mng_rad_profiles_new','mng_rad_profiles_edit','mng_rad_profiles_del','config_maint_disconnect_user','acct_all','config_operators_list','config_backup_managebackups','mng_rad_nas_list','mng_rad_nas_new','mng_rad_nas_edit'] as $f) { $out[$f]=$this->allowed($f); } return $out;
+        $out=[]; foreach(['mng_new','mng_edit','mng_del','mng_import_users','mng_rad_profiles_new','mng_rad_profiles_edit','mng_rad_profiles_del','config_maint_disconnect_user','acct_all','config_operators_list','config_backup_managebackups','mng_rad_nas_list','mng_rad_nas_new','mng_rad_nas_edit','acct_maintenance_delete'] as $f) { $out[$f]=$this->allowed($f); } return $out;
     }
     private function text($in,$key,$max=128,$required=false) {
         $v=$in[$key]??''; if (!is_string($v) || strlen($v)>$max || preg_match('/[\x00-\x1f\x7f]/',$v)) { throw new PCError('Invalid '.$key.'.'); }
@@ -91,7 +93,7 @@ class ProviderAdmin {
         $providerId=$provider['provider_id']??null;
         $profile['provider_id']=is_scalar($providerId)?(string)$providerId:'';
         $profile['last_synced']=(($info['updateby']??'')==='OAuthCallback' && !empty($info['updatedate']) && substr($info['updatedate'],0,4)!=='0000')?$info['updatedate']:null;
-        $attrs=$this->q('SELECT attribute,value FROM '.$this->tables['check'].' WHERE username=? AND attribute IN (\'Expiration\',\'Simultaneous-Use\') UNION ALL SELECT attribute,value FROM '.$this->tables['reply'].' WHERE username=? AND attribute IN (\'Session-Timeout\',\'Idle-Timeout\')',[$u,$u])->fetchAll();
+        $attrs=$this->q('SELECT attribute,value FROM '.$this->tables['check'].' WHERE username=? AND attribute IN (\'Expiration\',\'Simultaneous-Use\') UNION ALL SELECT attribute,value FROM '.$this->tables['reply'].' WHERE username=? AND attribute IN (\'Session-Timeout\')',[$u,$u])->fetchAll();
         $access=[];foreach($attrs as $a)$access[$a['attribute']]=$a['value'];
         $groups=$this->q('SELECT groupname FROM '.$this->tables['groups'].' WHERE username=? ORDER BY priority',[$u])->fetchAll(PDO::FETCH_COLUMN);
         $row['account_status']=$this->accountStatus($row);
@@ -140,7 +142,7 @@ class ProviderAdmin {
         $out['groups']=$in['groups']??[];
         if(!is_array($out['groups'])||count($out['groups'])>20)throw new PCError('Invalid group selection.');
         $available=array_column($this->groups(),'groupname');foreach($out['groups'] as $g)if(!in_array($g,$available,true))throw new PCError('Select an existing group.');
-        foreach(['simultaneous','session_timeout','idle_timeout'] as $key){$v=$in[$key]??'';if($v!==''&&(!is_scalar($v)||!ctype_digit((string)$v)||(int)$v<1||(int)$v>31536000))throw new PCError('Invalid '.$key.'.');$out[$key]=$v;}
+        foreach(['simultaneous','session_timeout'] as $key){$v=$in[$key]??'';if($v!==''&&(!is_scalar($v)||!ctype_digit((string)$v)||(int)$v<1||(int)$v>31536000))throw new PCError('Invalid '.$key.'.');$out[$key]=$v;}
         $expiration=$this->text($in,'expires',19);$out['expiration']='';
         if($expiration!==''){$d=DateTime::createFromFormat('!Y-m-d\TH:i',$expiration);if(!$d||$d->format('Y-m-d\TH:i')!==$expiration)throw new PCError('Invalid expiry date.');$out['expiration']=$d->format('d M Y H:i:s');}
         return $out;
@@ -162,7 +164,7 @@ class ProviderAdmin {
                 $this->setAttribute('check',$u,'Cleartext-Password',$v['password']);
             }
             $this->setAttribute('check',$u,'Expiration',$v['expiration']);$this->setAttribute('check',$u,'Simultaneous-Use',$v['simultaneous']);
-            $this->setAttribute('reply',$u,'Session-Timeout',$v['session_timeout']);$this->setAttribute('reply',$u,'Idle-Timeout',$v['idle_timeout']);
+            $this->setAttribute('reply',$u,'Session-Timeout',$v['session_timeout']);
             $this->q('DELETE FROM '.$this->tables['groups'].' WHERE username=?',[$u]);foreach(array_values(array_unique($v['groups'])) as $i=>$g)$this->q('INSERT INTO '.$this->tables['groups'].' (username,groupname,priority) VALUES (?,?,?)',[$u,$g,$i+1]);
             $this->audit($create?'user.create':'user.update',$u,'success','Account and access settings saved; credentials omitted.');return ['message'=>'User saved. Existing sessions are unchanged.'];
         });
@@ -204,6 +206,10 @@ class ProviderAdmin {
         $this->requirePermission('acct_all');$u=$this->text($in,'username',128);
         return $this->q('SELECT created_at,operator_name,action,username,session_id,status,detail FROM pc_admin_audit'.($u!==''?' WHERE username=?':'').' ORDER BY id DESC LIMIT 100',$u!==''?[$u]:[])->fetchAll();
     }
+    public function logEntries($in) {$this->requirePermission('acct_all');return $this->logStore->entries($in);}
+    public function logStatus() {$this->requirePermission('acct_all');return $this->logStore->status();}
+    public function logClearPlan($in) {$this->requirePermission('acct_all');$this->requirePermission('acct_maintenance_delete');return $this->logStore->plan($in['scope']??'', $in['mode']??'');}
+    public function clearLogPlan($plan) {$this->requirePermission('acct_all');$this->requirePermission('acct_maintenance_delete');return $this->logStore->clear($plan);}
     public function nasList() { $this->requirePermission('mng_rad_nas_list');return $this->q('SELECT id,nasname,shortname,type,ports,description,CASE WHEN secret IS NULL OR secret=\'\' THEN 0 ELSE 1 END secret_set FROM '.$this->tables['nas'].' ORDER BY shortname')->fetchAll(); }
     public function saveNas($in) {
         $id=$in['id']??0;
