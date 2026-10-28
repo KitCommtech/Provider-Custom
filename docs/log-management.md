@@ -26,7 +26,7 @@ systemctl status provider-admin-log-retention.timer --no-pager
 journalctl -u provider-admin-log-retention.service -n 10 --no-pager
 ```
 
-The hourly job drains expired logs in bounded batches with a database lock; failures return a nonzero exit code. Each batch records a `logs.retention` event. The page reports the last cleanup. Expired entries may remain until the next hourly run; large backlogs can require subsequent runs.
+The hourly job drains expired logs in bounded batches with a database lock; failures return a nonzero exit code. Each batch records a `logs.retention` event. Cleanup runs remain visible in Admin Activity. Expired entries may remain until the next hourly run; large backlogs can require subsequent runs.
 
 Clear Logs requires existing reporting **and** accounting maintenance delete permissions. An expiring, session-bound preview freezes selected IDs, up to 5,000 per log type. Clearing requires typed `CLEAR` and confirmation. Eligibility is rechecked and newly arriving rows are excluded. Partial failures report the count already deleted and require a new preview. Cleanup intent/results remain audited.
 
